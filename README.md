@@ -2,6 +2,10 @@
 
 Open `dist/index.html` directly in a browser. No installation or build is needed.
 
+## Vercel deployment
+
+Import this repository with its Root Directory left at the repository root. The included `vercel.json` selects the Other framework preset, skips build/install commands, and serves the existing `dist` folder. Its `index.html` is the homepage. If a previously created Vercel project has a custom Root Directory, clear it before redeploying. GitHub pushes to `main` trigger a new production deployment when the repository is connected to Vercel.
+
 The responsive demo includes services, home/business solutions, FAQs, an enquiry form, a floating WhatsApp control, and a clearly labelled scripted assistant. The assistant is not live AI. No messages or form data are sent automatically or stored.
 
 The editorial design uses Outfit and Instrument Serif, warm paper and forest tones, and fine brass accents. `studio.css` contains the redesign over the base component styles. Hero words enter on load; section heading words reveal progressively with scroll position using a smoothed animation frame. Motion respects system preferences, including preference changes while the page is open. Heading labels remain accessible to assistive technology. No animation dependencies or build step are required.
