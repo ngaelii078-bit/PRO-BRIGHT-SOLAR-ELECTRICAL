@@ -19,12 +19,111 @@ document.querySelectorAll('[data-service]').forEach(link => link.addEventListene
   $('#quote-form select').value = link.dataset.service;
 }));
 const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-if (!motionQuery.matches && 'IntersectionObserver' in window) {
-  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
-    if (entry.isIntersecting) { entry.target.classList.add('visible'); observer.unobserve(entry.target); }
-  }), { threshold: 0.08 });
-  document.documentElement.classList.add('js-motion');
-  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+initMotion();
+
+function initMotion() {
+  const root = document.documentElement;
+  const headings = [...document.querySelectorAll('main h1, main h2')];
+  // Split text nodes only: line breaks, emphasis and colour spans stay intact.
+  const groups = headings.map(heading => {
+    const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    heading.setAttribute('aria-label', nodes.map(node => node.textContent.trim()).filter(Boolean).join(' '));
+    let index = 0;
+    nodes.forEach(node => {
+      const fragment = document.createDocumentFragment();
+      node.textContent.split(/(\s+)/).filter(Boolean).forEach(part => {
+        if (/^\s+$/.test(part)) { fragment.append(document.createTextNode(part)); return; }
+        const mask = document.createElement('span');
+        mask.className = 'word-mask';
+        mask.setAttribute('aria-hidden', 'true');
+        const word = document.createElement('span');
+        word.className = 'reveal-word';
+        word.style.setProperty('--word-index', index++);
+        word.textContent = part;
+        mask.append(word);
+        fragment.append(mask);
+      });
+      node.replaceWith(fragment);
+    });
+    heading.classList.add('word-heading');
+    // Avoid fading the entire parent while its individual words are revealing.
+    const parentReveal = heading.closest('.reveal');
+    parentReveal?.classList.remove('reveal');
+    return { heading, words: [...heading.querySelectorAll('.reveal-word')], hero: heading.tagName === 'H1', top: 0, height: 0, current: null };
+  });
+  const scrollGroups = groups.filter(group => !group.hero);
+  const progress = document.createElement('div');
+  progress.className = 'scroll-progress';
+  progress.setAttribute('aria-hidden', 'true');
+  document.body.append(progress);
+  let frame = 0;
+  let viewport = window.innerHeight;
+  let pageRange = 1;
+  let revealObserver;
+  const clamp = value => Math.max(0, Math.min(1, value));
+  function measure() {
+    viewport = window.innerHeight;
+    pageRange = Math.max(1, root.scrollHeight - viewport);
+    scrollGroups.forEach(group => { const rect = group.heading.getBoundingClientRect(); group.top = rect.top + window.scrollY; group.height = rect.height; });
+    schedule();
+  }
+  function render() {
+    frame = 0;
+    if (motionQuery.matches || document.hidden) return;
+    const scroll = window.scrollY;
+    let moving = false;
+    scrollGroups.forEach(group => {
+      // The whole word sequence unfolds between 91% and 43% of viewport height.
+      const start = group.top - viewport * .91;
+      const range = viewport * .48 + Math.min(group.height * .35, 90);
+      const target = clamp((scroll - start) / range);
+      if (group.current === null) group.current = target;
+      const delta = target - group.current;
+      group.current = Math.abs(delta) < .0008 ? target : group.current + delta * .13;
+      if (group.current !== target) moving = true;
+      group.words.forEach((word, index) => {
+        const stagger = group.words.length === 1 ? 0 : (index / (group.words.length - 1)) * .67;
+        const local = clamp((group.current - stagger) / .33);
+        const eased = 1 - Math.pow(1 - local, 3);
+        word.style.opacity = String(.12 + eased * .88);
+        word.style.transform = `translate3d(0,${((1 - eased) * 28).toFixed(2)}px,0)`;
+      });
+    });
+    progress.style.transform = `scaleX(${clamp(scroll / pageRange)})`;
+    if (moving) schedule();
+  }
+  function schedule() { if (!frame && !motionQuery.matches) frame = requestAnimationFrame(render); }
+  function configure() {
+    cancelAnimationFrame(frame); frame = 0;
+    revealObserver?.disconnect();
+    root.classList.toggle('motion-ready', !motionQuery.matches);
+    root.classList.toggle('js-motion', !motionQuery.matches && 'IntersectionObserver' in window);
+    if (motionQuery.matches) {
+      scrollGroups.forEach(group => group.words.forEach(word => { word.style.removeProperty('opacity'); word.style.removeProperty('transform'); }));
+      return;
+    }
+    if ('IntersectionObserver' in window) {
+      revealObserver = new IntersectionObserver(entries => entries.forEach(entry => {
+        if (entry.isIntersecting) { entry.target.classList.add('visible'); revealObserver.unobserve(entry.target); }
+      }), { threshold: .1 });
+      document.querySelectorAll('.reveal').forEach((el, index) => {
+        el.style.transitionDelay = `${(index % 3) * 85}ms`;
+        revealObserver.observe(el);
+      });
+    }
+    measure();
+  }
+  window.addEventListener('scroll', schedule, { passive: true });
+  window.addEventListener('resize', measure, { passive: true });
+  window.addEventListener('load', measure, { once: true });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) measure(); });
+  motionQuery.addEventListener('change', configure);
+  // Font swaps and image loading must not move the reveal's cached scroll positions.
+  document.fonts?.ready.then(measure);
+  if ('ResizeObserver' in window) new ResizeObserver(measure).observe(document.querySelector('main'));
+  configure();
 }
 $('#year').textContent = new Date().getFullYear();
 const panel = $('#assistant');
